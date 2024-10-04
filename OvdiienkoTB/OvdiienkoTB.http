@@ -1,0 +1,6 @@
+@OvdiienkoTB_HostAddress = http://localhost:5056
+
+GET {{OvdiienkoTB_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
