@@ -4,9 +4,9 @@ public class Transaction
 {
     public string Sender { get; set; }
     public string Recipient { get; set; }
-    public int Amount { get; set; }
+    public double Amount { get; set; }
 
-    public Transaction(string sender, string recipient, int amount)
+    public Transaction(string sender, string recipient, double amount)
     {
         Sender = sender;
         Recipient = recipient;
@@ -23,7 +23,7 @@ public class Transaction
         return this.Recipient;
     }
 
-    public int GetAmount_OMO()
+    public double GetAmount_OMO()
     {
         return this.Amount;
     }

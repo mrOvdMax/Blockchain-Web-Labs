@@ -55,6 +55,11 @@ public class Block
         return this.PreviousHash;
     }
 
+    public void AddCoinbaseTransaction_OMO(Transaction transaction)
+    {
+        this.Transactions.Insert(0, transaction);
+    }
+    
     public override string ToString()
     {
         return $"Block with index: {GetIndex_OMO()}\nTimestamp: {GetTimestamp_OMO()}, Nonce: {GetNonce_OMO()}, Previous: {GetPreviousHash_OMO()}";
