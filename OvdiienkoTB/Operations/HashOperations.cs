@@ -3,7 +3,7 @@ using System.Text;
 
 namespace OvdiienkoTB.Operations;
 
-public class HashOperation
+public class HashOperations
 {
     public static string GetSha256Hash_OMO(string input)
     {

@@ -1,12 +1,15 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using OvdiienkoTB.Models;
+using OvdiienkoTB.Operations;
 
 namespace OvdiienkoTB.Controllers;
 [ApiController]
 [Route("api/blockchain")]
 public class BlockchainController : ControllerBase
 {
-    private static readonly Blockchain Blockchain = new Blockchain();
+    //private static readonly Blockchain Blockchain = new Blockchain();
+    private static readonly BlockchainJson Blockchain = new BlockchainJson();
+    private readonly JsonBlockOperations _jsonBlockOperations = new JsonBlockOperations();
 
     [HttpPost("transactions/new")]
     public IActionResult NewTransaction([FromBody] Transaction? transaction)
@@ -26,8 +29,22 @@ public class BlockchainController : ControllerBase
                 recipient = transaction.Recipient,
                 amount = transaction.Amount,
             },
-            transactionId = index
+            //transactionId = index
         });
+    }
+
+    [HttpGet("transactions/mempool")]
+    public IActionResult GetTransactionsMempool()
+    {
+        try
+        {
+            return Ok(Blockchain.GetTransactions());
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 
     [HttpGet("mine")]
@@ -61,18 +78,24 @@ public class BlockchainController : ControllerBase
         }
     }
 
-    [HttpGet("chain")]
+    [HttpGet("blockchain")]
     public IActionResult GetChain()
     {
+        if (Blockchain == null)
+        {
+            return BadRequest(new { message = "Blockchain is not initialized" });
+        }
+        
         return Ok(new
         {
             message = "Blockchain retrieved successfully",
             length = Blockchain.Count(),
-            chain = Blockchain.Select(block => new
+            chain = Blockchain.Where(block => block != null)
+                .Select(block => new
             {
                 index = block.Index,
                 timestamp = block.Timestamp,
-                transactions = block.GetTransactions_OMO().Select(tx => new
+                transactions = block.GetTransactions_OMO()?.Select(tx => new
                 {
                     sender = tx.Sender,
                     recipient = tx.Recipient,
@@ -82,5 +105,49 @@ public class BlockchainController : ControllerBase
                 nonce = block.GetNonce_OMO()
             }).ToList()
         });
+    }
+
+    [HttpGet("blockchain/get/{index}")]
+    public IActionResult GetBlock([FromRoute] int index)
+    {
+        try
+        {
+            return Ok(_jsonBlockOperations.DeserializeBlockByIndex(index));
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
+    }
+
+    [HttpDelete("blockchain/deleteall")]
+    public IActionResult DeleteAllBlocks()
+    {
+        try
+        {
+            _jsonBlockOperations.RemoveAllBlocks();
+            return Ok(new {message = "Blockchain deleted successfully"});
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
+    }
+    
+    [HttpDelete("blockchain/deletelast")]
+    public IActionResult DeleteLastBlock()
+    {
+        try
+        {
+            _jsonBlockOperations.RemoveLastBlock();
+            return Ok(new {message = "Last block deleted successfully"});
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 }

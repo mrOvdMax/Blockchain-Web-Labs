@@ -4,37 +4,38 @@ using OvdiienkoTB.Operations;
 
 namespace OvdiienkoTB.Models;
 
-public class Blockchain : IEnumerable<Block>
+public class BlockchainJson : IEnumerable<Block>
 {
-    private readonly List<Block> _chain = [];
     private readonly List<Transaction> _currentTransactions = [];
     private const int MaxNonce = 102024; 
     private const int StartingNonce = 1510; 
     private const string Surname = "Ovdiienko";
     private double _mineReward = 2005;
+    private readonly JsonBlockOperations _jsonBlockOperations = new JsonBlockOperations();
 
 
-    public Blockchain()
+    public BlockchainJson()
     {
-        NewGenesisBlock_OMO(Surname);
+        if(_jsonBlockOperations.GetBlockCount() == 0)
+            NewGenesisBlock_OMO(Surname);
     }
 
     public int NewTransaction_OMO(string sender, string recipient, double amount)
     {
         this._currentTransactions.Add(new Transaction(sender, recipient, amount));
-        return this._chain.Count;
+        return this._jsonBlockOperations.GetBlockCount();
     }
     
     public Block NewGenesisBlock_OMO(string previousHash)
     {
         var transactions = _currentTransactions.ToList();
         
-        var newBlock = new Block(this._chain.Count, transactions, previousHash);
+        var newBlock = new Block(this._jsonBlockOperations.GetBlockCount(), transactions, previousHash);
         
         var (finalNonce, finalHash) = ProofOfWork_OMO(newBlock);
         
         this._currentTransactions.Clear();
-        this._chain.Add(newBlock);
+        _jsonBlockOperations.SerializeBlock(newBlock);
 
         Console.WriteLine($"New block with index {newBlock.Index} added with Nonce: {finalNonce} and Hash: {finalHash}");
         Console.WriteLine();
@@ -44,17 +45,22 @@ public class Blockchain : IEnumerable<Block>
     
     public Block NewBlock_OMO()
     {
+        if (_jsonBlockOperations.GetBlockCount() == 0)
+        {
+            return NewGenesisBlock_OMO(Surname);
+        }
+        
         var transactions = _currentTransactions.ToList();
         
-        var newBlock = new Block(this._chain.Count, transactions, GetLastHash_OMO());
+        var newBlock = new Block(this._jsonBlockOperations.GetBlockCount(), transactions, GetLastHash_OMO());
         
         AddCoinbaseTransaction_OMO(newBlock, "Ovdiienko", CalculateCoinbaseTransactionReward_OMO());
         
         var (finalNonce, finalHash) = ProofOfWork_OMO(newBlock);
         
         this._currentTransactions.Clear();
-        this._chain.Add(newBlock);
-
+        _jsonBlockOperations.SerializeBlock(newBlock);
+        
         Console.WriteLine($"New block with index {newBlock.Index} added with Nonce: {finalNonce} and Hash: {finalHash}");
         Console.WriteLine();
         
@@ -63,7 +69,7 @@ public class Blockchain : IEnumerable<Block>
 
     private double CalculateCoinbaseTransactionReward_OMO()
     {
-        _mineReward = (_chain.Count % 2 == 0 && _chain.Count > 0 ? _mineReward / 11 : _mineReward);
+        _mineReward = (_jsonBlockOperations.GetBlockCount() % 2 == 0 && _jsonBlockOperations.GetBlockCount() > 0 ? _mineReward / 11 : _mineReward);
         return _mineReward;
     }
 
@@ -74,22 +80,27 @@ public class Blockchain : IEnumerable<Block>
     
     public string GetLastHash_OMO()
     {
-        return Hash_OMO(_chain[^1]);
+        return Hash_OMO(_jsonBlockOperations.DeserializeLastBlock());
     }
     
     public Block GetLastBlock_OMO()
     {
-        return _chain[^1];
+        return _jsonBlockOperations.DeserializeLastBlock();
     }
 
     public List<Block> GetBlockchain()
     {
-        return _chain;
+        return _jsonBlockOperations.DeserializeBlocks();
+    }
+
+    public List<Transaction> GetTransactions()
+    {
+        return _currentTransactions;
     }
 
     private static string Hash_OMO(Block block)
     {
-        StringBuilder hashingInputBuilder = new StringBuilder();
+        var hashingInputBuilder = new StringBuilder();
         
         hashingInputBuilder.Append(block.Index)
             .Append(block.Timestamp)
@@ -138,10 +149,10 @@ public class Blockchain : IEnumerable<Block>
 
         block.SetNonce_OMO(nonce);  
         
-        Console.WriteLine($"{_chain.Count} PoW iteration count: {counter}");
+        Console.WriteLine($"{_jsonBlockOperations.GetBlockCount()} PoW iteration count: {counter}");
         return (nonce, finalHash); 
     }
 
-    public IEnumerator<Block> GetEnumerator() => _chain.GetEnumerator();
+    public IEnumerator<Block> GetEnumerator() => _jsonBlockOperations.DeserializeBlocks().GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
 }

@@ -1,22 +1,28 @@
-﻿namespace OvdiienkoTB.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace OvdiienkoTB.Models;
 
 public class Block
 {
     public int Index { get; }
     public long Timestamp { get; }
-    private List<Transaction> Transactions { get; }
+    
+    [JsonInclude] 
+    public List<Transaction> Transactions { get; private set; } 
+    
     public int Nonce { get; private set; }
     public string PreviousHash { get; }
 
-    public Block(int index, List<Transaction> transactions, int proof, string previousHash)
+    [JsonConstructor]
+    public Block(int index, long timestamp, List<Transaction> transactions, int nonce, string previousHash)
     {
         Index = index;
-        Timestamp = DateTime.UtcNow.Ticks;
+        Timestamp = timestamp;
         Transactions = transactions;
-        Nonce = proof;
+        Nonce = nonce;
         PreviousHash = previousHash;
     }
-    
+
     public Block(int index, List<Transaction> transactions, string previousHash)
     {
         Index = index;
@@ -30,36 +36,17 @@ public class Block
         Nonce = nonce;
     }
 
-    public int GetIndex_OMO()
-    {
-        return this.Index;
-    }
-
-    public long GetTimestamp_OMO()
-    {
-        return this.Timestamp;
-    }
-
-    public List<Transaction> GetTransactions_OMO()
-    {
-        return this.Transactions;
-    }
-
-    public int GetNonce_OMO()
-    {
-        return this.Nonce;
-    }
-
-    public string GetPreviousHash_OMO()
-    {
-        return this.PreviousHash;
-    }
+    public int GetIndex_OMO() => this.Index;
+    public long GetTimestamp_OMO() => this.Timestamp;
+    public List<Transaction> GetTransactions_OMO() => this.Transactions;
+    public int GetNonce_OMO() => this.Nonce;
+    public string GetPreviousHash_OMO() => this.PreviousHash;
 
     public void AddCoinbaseTransaction_OMO(Transaction transaction)
     {
         this.Transactions.Insert(0, transaction);
     }
-    
+
     public override string ToString()
     {
         return $"Block with index: {GetIndex_OMO()}\nTimestamp: {GetTimestamp_OMO()}, Nonce: {GetNonce_OMO()}, Previous: {GetPreviousHash_OMO()}";
