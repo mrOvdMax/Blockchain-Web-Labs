@@ -82,6 +82,11 @@ public class JsonBlockOperations
     {
         return DeserializeBlocks().Count;
     }
+
+    public double GetLastReward()
+    {
+        return DeserializeLastBlock().Transactions.First().Amount;
+    }
     
     public void RemoveAllBlocks()
     {

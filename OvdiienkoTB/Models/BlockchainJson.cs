@@ -11,7 +11,7 @@ public class BlockchainJson : IEnumerable<Block>
     private const int StartingNonce = 1510; 
     private const string Surname = "Ovdiienko";
     private double _mineReward = 2005;
-    private readonly JsonBlockOperations _jsonBlockOperations = new JsonBlockOperations();
+    private readonly JsonBlockOperations _jsonBlockOperations = new();
 
 
     public BlockchainJson()
@@ -69,7 +69,12 @@ public class BlockchainJson : IEnumerable<Block>
 
     private double CalculateCoinbaseTransactionReward_OMO()
     {
-        _mineReward = (_jsonBlockOperations.GetBlockCount() % 2 == 0 && _jsonBlockOperations.GetBlockCount() > 0 ? _mineReward / 11 : _mineReward);
+        if (_jsonBlockOperations.GetBlockCount() != 0)
+        {
+            _mineReward = _jsonBlockOperations.GetLastReward();
+            return _mineReward = (_jsonBlockOperations.GetBlockCount() % 2 == 0 && _jsonBlockOperations.GetBlockCount() > 0 ? _mineReward / 11 : _mineReward);
+        }
+        
         return _mineReward;
     }
 
