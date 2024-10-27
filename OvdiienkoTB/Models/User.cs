@@ -1,22 +1,14 @@
 ﻿namespace OvdiienkoTB.Models;
 
-public class User
+public class User : BaseEntity
 {
-    public string UserId { get; set; }
+    public string Username { get; set; }
+    public string Name { get; set; }
+    public string Surname { get; set; }
     public string Email { get; set; }
-    public string PasswordHash { get; set; }
-    public List<Wallet> Wallets { get; set; }
-
-    public User(string userId, string email, string passwordHash)
-    {
-        UserId = userId;
-        Email = email;
-        PasswordHash = passwordHash;
-        Wallets = new List<Wallet>();
-    }
-
-    public void AddWallet(Wallet wallet)
-    {
-        Wallets.Add(wallet);
-    }
+    //public string PasswordHash { get; set; }
+    public string Password { get; set; }
+    public DateTime BirthDate { get; set; }
+    
+    public ICollection<Wallet> Wallets { get; set; }
 }

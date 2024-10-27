@@ -7,7 +7,6 @@ public class BlockchainDbContext : DbContext
 {
     public DbSet<User> Users { get; set; }
     public DbSet<Wallet> Wallets { get; set; }
-    //public DbSet<Block> Blocks { get; set; }
     
     public BlockchainDbContext(DbContextOptions<BlockchainDbContext> options)
         : base(options)
@@ -16,9 +15,18 @@ public class BlockchainDbContext : DbContext
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<User>().ToTable("Users").HasMany(u => u.Wallets).WithOne(w => w.User);
-        modelBuilder.Entity<Wallet>().ToTable("Users").HasOne(w => w.User).WithMany(u => u.Wallets);
-        //modelBuilder.Entity<Block>().ToTable("Users");
+        modelBuilder.Entity<User>()
+            .ToTable("Users")
+            .HasMany(u => u.Wallets)
+            .WithOne(w => w.User)
+            .HasForeignKey(w => w.Id);
+        
+        modelBuilder.Entity<Wallet>()
+            .ToTable("Wallets")
+            .HasOne(w => w.User)
+            .WithMany(u => u.Wallets)
+            .HasForeignKey(w => w.Id);
+
         base.OnModelCreating(modelBuilder);
     }
 }

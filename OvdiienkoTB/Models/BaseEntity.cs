@@ -1,0 +1,20 @@
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace OvdiienkoTB.Models;
+
+public abstract class BaseEntity
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public int Id { get; set; }
+
+    protected BaseEntity()
+    {
+    }
+
+    protected BaseEntity(int id)
+    {
+        Id = id;
+    }
+}
