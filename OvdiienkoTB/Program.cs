@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using OvdiienkoTB.Data;
+using OvdiienkoTB.Models;
 using OvdiienkoTB.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,8 +20,8 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 
 builder.Services.AddDbContext<BlockchainDbContext>(options =>
-        options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
+        options.UseSqlServer(builder.Configuration.GetConnectionString("DesktopConnection")).EnableSensitiveDataLogging());
+builder.Services.AddScoped<BlockchainJson>();
 
 var app = builder.Build();
 

@@ -1,4 +1,7 @@
-﻿using System.Security.Cryptography;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace OvdiienkoTB.Models;
 
@@ -8,22 +11,41 @@ public class Wallet : BaseEntity
     public string PublicKey { get; set; }
     private string PrivateKey { get; set; }
     public decimal Amount { get; set; }
-    public User User { get; set; }
-
-    public Wallet() : base()
-    {
-        
-    }
     
-    public Wallet( User user, decimal amount = 0) : base()
+    public Wallet(decimal amount = 0) : base()
     {
         Amount = amount;
-        User = user;
-        UserId = user.Id;
-        
         using var rsa = new RSACryptoServiceProvider(2048);
         rsa.PersistKeyInCsp = false;
         PrivateKey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
         PublicKey = Convert.ToBase64String(rsa.ExportRSAPublicKey());
     }
+    
+    public string SignData(string data)
+    {
+        // Convert the Base64 encoded private key back to a byte array
+        var privateKeyBytes = Convert.FromBase64String(PrivateKey);
+    
+        using var rsa = RSA.Create();
+    
+        // Import the private key from the byte array
+        rsa.ImportRSAPrivateKey(privateKeyBytes, out _);
+
+        // Sign the data using the private key
+        var dataToSign = Encoding.UTF8.GetBytes(data);
+        var signatureBytes = rsa.SignData(dataToSign, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+    
+        return Convert.ToBase64String(signatureBytes);
+    }
+
+
+    public static bool VerifySignature(string data, string signature, string publicKey)
+    {
+        using var rsa = new RSACryptoServiceProvider();
+        rsa.ImportFromPem(publicKey);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(data));
+        return rsa.VerifyHash(hash, Convert.FromBase64String(signature), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+    }
+
+    public void AdjustBalance(decimal amount) => Amount += amount;
 }

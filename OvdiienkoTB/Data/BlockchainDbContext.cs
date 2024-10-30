@@ -16,16 +16,12 @@ public class BlockchainDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>()
-            .ToTable("Users")
-            .HasMany(u => u.Wallets)
-            .WithOne(w => w.User)
-            .HasForeignKey(w => w.Id);
+            .ToTable("Users");
         
         modelBuilder.Entity<Wallet>()
             .ToTable("Wallets")
-            .HasOne(w => w.User)
-            .WithMany(u => u.Wallets)
-            .HasForeignKey(w => w.Id);
+            .Property(w => w.Id)
+            .ValueGeneratedOnAdd();
 
         base.OnModelCreating(modelBuilder);
     }

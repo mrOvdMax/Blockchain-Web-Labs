@@ -1,123 +1,143 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using OvdiienkoTB.Data;
 using OvdiienkoTB.Models;
 using OvdiienkoTB.Operations;
 
 namespace OvdiienkoTB.Controllers;
+
 [ApiController]
 [Route("api/blockchain")]
 public class BlockchainController : ControllerBase
 {
-    //private static readonly Blockchain Blockchain = new Blockchain();
-    private static readonly BlockchainJson Blockchain = new BlockchainJson();
+    private readonly BlockchainJson _blockchain;
+    private readonly BlockchainDbContext _context;
     private readonly JsonBlockOperations _jsonBlockOperations = new JsonBlockOperations();
 
-    [HttpPost("transactions/new")]
-    public IActionResult NewTransaction([FromBody] Transaction? transaction)
+    public BlockchainController(BlockchainJson blockchain, BlockchainDbContext context)
     {
-        if (transaction == null)
-        {
-            return BadRequest("Invalid transaction data");
-        }
+        _blockchain = blockchain;
+        _context = context;
+    }
 
-        var index = Blockchain.NewTransaction_OMO(transaction.Sender, transaction.Recipient, transaction.Amount);
-        return Created("", new
-        {
-            message = "Transaction created successfully",
-            transaction = new
-            {
-                sender = transaction.Sender,
-                recipient = transaction.Recipient,
-                amount = transaction.Amount,
-            },
-            //transactionId = index
-        });
+    [HttpPost("transactions/new/{senderId}/{recipientId}/{amount}")]
+    public async Task<ActionResult<Transaction>> NewTransaction(int senderId, int recipientId, int amount)
+    {
+        
+        if (amount <= 0)
+            return BadRequest("Transaction amount must be greater than zero");
+
+        var index = _blockchain.NewCurrencyTransaction_OMO(senderId, recipientId, amount);
+
+        await _context.SaveChangesAsync();
+
+        return Ok();
+    }
+
+    [HttpPost("transactions/check")]
+    public async Task<ActionResult<bool>> CheckTransaction([FromBody] Transaction? transaction)
+    {
+        if (transaction is null)
+            return BadRequest("Invalid transaction data");
+
+        var senderWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == transaction.SenderId);
+        if (senderWallet is null)
+            return NotFound("Sender wallet not found.");
+
+        var isValid = Wallet.VerifySignature(transaction.GetData(), transaction.Signature, senderWallet.PublicKey);
+
+        return Ok(isValid);
     }
 
     [HttpGet("transactions/mempool")]
     public IActionResult GetTransactionsMempool()
     {
-        try
-        {
-            return Ok(Blockchain.GetTransactions());
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
+        var mempool = _blockchain.GetTransactions();
+        if (mempool is null)
+            return NotFound();
+        return Ok(mempool);
     }
 
-    [HttpGet("mine")]
-    public IActionResult Mine()
+    [HttpGet("mine/{id}")]
+    public IActionResult Mine(int id)
     {
-        try
-        {
-            var newBlock = Blockchain.NewBlock_OMO();
+        var newBlock = _blockchain.NewBlock_OMO(id);
 
-            return Ok(new
-            {
-                message = "New block mined successfully",
-                block = new
-                {
-                    index = newBlock.Index,
-                    timestamp = newBlock.Timestamp,
-                    transactions = newBlock.GetTransactions_OMO().Select(tx => new
-                    {
-                        sender = tx.Sender,
-                        recipient = tx.Recipient,
-                        amount = tx.Amount
-                    }).ToList(),
-                    previousHash = newBlock.GetPreviousHash_OMO(),
-                    nonce = newBlock.GetNonce_OMO()
-                }
-            });
-        }
-        catch (Exception ex)
+        if (newBlock == null)
         {
-            return StatusCode(500, $"Error: {ex.Message}");
+            return BadRequest("Mining failed. No new block was created.");
         }
+
+        if (!newBlock.GetTransactions_OMO().Any())
+            return BadRequest("No transactions to mine.");
+
+        return Ok(new
+        {
+            message = "New block mined successfully",
+            block = new
+            {
+                index = newBlock.Index,
+                timestamp = newBlock.Timestamp,
+                transactions = newBlock.GetTransactions_OMO().Select(tx => new
+                {
+                    sender = tx.SenderId, 
+                    recipient = tx.RecipientId, 
+                    amount = tx.Amount
+                }).ToList(),
+                previousHash = newBlock.GetPreviousHash_OMO(),
+                nonce = newBlock.GetNonce_OMO()
+            }
+        });
     }
 
     [HttpGet("blockchain")]
     public IActionResult GetChain()
     {
-        if (Blockchain == null)
+        if (_blockchain is null || !_blockchain.Any())
         {
-            return BadRequest(new { message = "Blockchain is not initialized" });
+            return NotFound(new { message = "Blockchain is not initialized or is empty" });
         }
-        
+
+        var chain = _blockchain.Select(block => new
+        {
+            index = block.Index,
+            timestamp = block.Timestamp,
+            transactions = block.GetTransactions_OMO()?.Select(tx => new
+            {
+                sender = tx.SenderId,
+                recipient = tx.RecipientId,
+                amount = tx.Amount
+            }).ToList(),
+            previousHash = block.GetPreviousHash_OMO(),
+            nonce = block.GetNonce_OMO()
+        }).ToList();
+
         return Ok(new
         {
             message = "Blockchain retrieved successfully",
-            length = Blockchain.Count(),
-            chain = Blockchain.Where(block => block != null)
-                .Select(block => new
-            {
-                index = block.Index,
-                timestamp = block.Timestamp,
-                transactions = block.GetTransactions_OMO()?.Select(tx => new
-                {
-                    sender = tx.Sender,
-                    recipient = tx.Recipient,
-                    amount = tx.Amount
-                }).ToList(),
-                previousHash = block.GetPreviousHash_OMO(),
-                nonce = block.GetNonce_OMO()
-            }).ToList()
+            length = chain.Count,
+            chain
         });
     }
+
 
     [HttpGet("blockchain/get/{index}")]
     public IActionResult GetBlock([FromRoute] int index)
     {
         try
         {
-            return Ok(_jsonBlockOperations.DeserializeBlockByIndex(index));
+            var block = _jsonBlockOperations.DeserializeBlockByIndex(index);
+            if (block is null)
+            {
+                return NotFound(new { message = $"Block with index {index} not found." });
+            }
+
+            return Ok(block);
         }
         catch (Exception e)
         {
             Console.WriteLine(e);
-            throw;
+            return StatusCode(500, new { message = "An error occurred while retrieving the block." });
         }
     }
 
@@ -126,28 +146,39 @@ public class BlockchainController : ControllerBase
     {
         try
         {
+            if (_jsonBlockOperations.GetBlockCount() == 0)
+            {
+                return NotFound(new { message = "No blocks to delete." });
+            }
+
             _jsonBlockOperations.RemoveAllBlocks();
-            return Ok(new {message = "Blockchain deleted successfully"});
+            return Ok(new { message = "Blockchain deleted successfully" });
         }
         catch (Exception e)
         {
             Console.WriteLine(e);
-            throw;
+            return StatusCode(500, new { message = "An error occurred while deleting the blockchain." });
         }
     }
-    
+
+
     [HttpDelete("blockchain/deletelast")]
     public IActionResult DeleteLastBlock()
     {
         try
         {
+            if (_jsonBlockOperations.GetBlockCount() == 0)
+            {
+                return NotFound(new { message = "No blocks to delete." });
+            }
+
             _jsonBlockOperations.RemoveLastBlock();
-            return Ok(new {message = "Last block deleted successfully"});
+            return Ok(new { message = "Last block deleted successfully" });
         }
         catch (Exception e)
         {
             Console.WriteLine(e);
-            throw;
+            return StatusCode(500, new { message = "An error occurred while deleting the last block." });
         }
     }
 }

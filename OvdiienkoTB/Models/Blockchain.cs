@@ -11,7 +11,7 @@ public class Blockchain : IEnumerable<Block>
     private const int MaxNonce = 102024; 
     private const int StartingNonce = 1510; 
     private const string Surname = "Ovdiienko";
-    private double _mineReward = 2005;
+    private decimal _mineReward = 2005;
 
 
     public Blockchain()
@@ -19,7 +19,7 @@ public class Blockchain : IEnumerable<Block>
         NewGenesisBlock_OMO(Surname);
     }
 
-    public int NewTransaction_OMO(string sender, string recipient, double amount)
+    public int NewTransaction_OMO(int sender, int recipient, decimal amount)
     {
         this._currentTransactions.Add(new Transaction(sender, recipient, amount));
         return this._chain.Count;
@@ -42,13 +42,13 @@ public class Blockchain : IEnumerable<Block>
         return newBlock;
     }
     
-    public Block NewBlock_OMO()
+    public Block NewBlock_OMO(int id)
     {
         var transactions = _currentTransactions.ToList();
         
         var newBlock = new Block(this._chain.Count, transactions, GetLastHash_OMO());
         
-        AddCoinbaseTransaction_OMO(newBlock, "Ovdiienko", CalculateCoinbaseTransactionReward_OMO());
+        AddCoinbaseTransaction_OMO(newBlock, id, CalculateCoinbaseTransactionReward_OMO());
         
         var (finalNonce, finalHash) = ProofOfWork_OMO(newBlock);
         
@@ -61,15 +61,15 @@ public class Blockchain : IEnumerable<Block>
         return newBlock;
     }
 
-    private double CalculateCoinbaseTransactionReward_OMO()
+    private decimal CalculateCoinbaseTransactionReward_OMO()
     {
         _mineReward = (_chain.Count % 2 == 0 && _chain.Count > 0 ? _mineReward / 11 : _mineReward);
         return _mineReward;
     }
 
-    public void AddCoinbaseTransaction_OMO(Block block, string recipient, double amount)
+    public void AddCoinbaseTransaction_OMO(Block block, int id, decimal amount)
     {
-        block.AddCoinbaseTransaction_OMO(new Transaction("0", recipient, amount));
+        block.AddCoinbaseTransaction_OMO(new Transaction(0, id, amount));
     }
     
     public string GetLastHash_OMO()

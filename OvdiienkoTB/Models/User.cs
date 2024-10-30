@@ -10,5 +10,5 @@ public class User : BaseEntity
     public string Password { get; set; }
     public DateTime BirthDate { get; set; }
     
-    public ICollection<Wallet> Wallets { get; set; }
+    public ICollection<int> WalletIds { get; set; }
 }

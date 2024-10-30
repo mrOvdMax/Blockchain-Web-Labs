@@ -32,32 +32,54 @@ public class JsonBlockOperations
 
     public void SerializeBlocks(List<Block> blocks)
     {
-        using var fs = new FileStream(_filePath, FileMode.Create, FileAccess.Write);
-        JsonSerializer.Serialize(fs, blocks, _options);
-        Console.WriteLine("Blocks have been saved to file.");
+        try
+        {
+            using var fs = new FileStream(_filePath, FileMode.Create, FileAccess.Write);
+            JsonSerializer.Serialize(fs, blocks, _options);
+            Console.WriteLine("Blocks have been saved to file.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving blocks to file: {ex.Message}");
+        }
     }
 
     public void SerializeBlock(Block newBlock)
     {
-        var blocks = DeserializeBlocks();
-        blocks.Add(newBlock); 
+        try
+        {
+            var blocks = DeserializeBlocks();
+            blocks.Add(newBlock);
 
-        using var fs = new FileStream(_filePath, FileMode.Create, FileAccess.Write);
-        JsonSerializer.Serialize(fs, blocks, _options);
-        Console.WriteLine("Block has been added and saved to file.");
+            using var fs = new FileStream(_filePath, FileMode.Create, FileAccess.Write);
+            JsonSerializer.Serialize(fs, blocks, _options);
+            Console.WriteLine("Block has been added and saved to file.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error adding block: {ex.Message}");
+        }
     }
 
     public List<Block> DeserializeBlocks()
     {
-        if (File.Exists(_filePath) && new FileInfo(_filePath).Length > 0)
+        try
         {
-            using var fs = new FileStream(_filePath, FileMode.Open, FileAccess.Read);
-            return JsonSerializer.Deserialize<List<Block>>(fs, _options) ?? new List<Block>();
-        }
+            if (File.Exists(_filePath) && new FileInfo(_filePath).Length > 0)
+            {
+                using var fs = new FileStream(_filePath, FileMode.Open, FileAccess.Read);
+                return JsonSerializer.Deserialize<List<Block>>(fs, _options) ?? new List<Block>();
+            }
 
-        return new List<Block>(); 
+            return new List<Block>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deserializing blocks: {ex.Message}");
+            return new List<Block>(); // Return an empty list in case of error
+        }
     }
-    
+
     public Block DeserializeBlockByIndex(int index)
     {
         var blocks = DeserializeBlocks();
@@ -71,31 +93,42 @@ public class JsonBlockOperations
         return null;
     }
 
-
     public Block DeserializeLastBlock()
     {
         var blocks = DeserializeBlocks();
-        return blocks.Count > 0 ? blocks[^1] : null; 
+        return blocks.Count > 0 ? blocks[^1] : null;
     }
-    
+
     public int GetBlockCount()
     {
         return DeserializeBlocks().Count;
     }
 
-    public double GetLastReward()
+    public decimal GetLastReward()
     {
-        return DeserializeLastBlock().Transactions.First().Amount;
+        var lastBlock = DeserializeBlocks().LastOrDefault();
+        if(lastBlock is null)
+            throw new NullReferenceException();
+        if(lastBlock.Transactions.Count <= 0)
+            return 0;
+        return lastBlock?.Transactions.First().Amount ?? 0;
     }
-    
+
     public void RemoveAllBlocks()
     {
-        using (var fs = new FileStream(_filePath, FileMode.Create, FileAccess.Write))
+        try
         {
-            JsonSerializer.Serialize(fs, new List<Block>(), _options); // Write an empty list to clear the file
-        }
+            using (var fs = new FileStream(_filePath, FileMode.Create, FileAccess.Write))
+            {
+                JsonSerializer.Serialize(fs, new List<Block>(), _options);
+            }
 
-        Console.WriteLine("All blocks have been removed.");
+            Console.WriteLine("All blocks have been removed.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error removing all blocks: {ex.Message}");
+        }
     }
 
     public void RemoveBlockByIndex(int index)

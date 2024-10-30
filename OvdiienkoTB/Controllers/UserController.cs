@@ -16,6 +16,7 @@ public class UserController : ControllerBase
     {
         _context = context;
     }
+    
     [HttpGet]
     public async Task<ActionResult<IEnumerable<User>>> GetUsers()
     {
@@ -34,34 +35,45 @@ public class UserController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<User>> PostUser([FromBody] User user)
     {
-        ValidateEntities.ValidateUser(user);
+        var validation = ValidateEntities.ValidateUser(user);
+        if(validation.Count > 0)
+            return BadRequest(new BlockchainException(string.Join(',', validation)));
+        
         
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
         return Ok(user);
     }
 
-    [HttpPut("wallet/{id}")]
-    public async Task<ActionResult<User>> PutWallet(int id)
-    { 
-        
-        var user = await _context.Users.FindAsync(id);
+    [HttpPost("wallet/{id}")]
+    public async Task<ActionResult<Wallet>> PostWallet(int id, [FromBody] Wallet walletData)
+    {
+        var validation = ValidateEntities.ValidateWallet(walletData);
+        if (validation.Count > 0)
+            return BadRequest(new BlockchainException(string.Join(',', validation)));
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
         if (user is null)
             return NotFound();
-        
-        var wallet = new Wallet(user, 0);
-        ValidateEntities.ValidateWallet(wallet);
-        
-        user.Wallets ??= [];
-        user.Wallets.Add(wallet);       
-        
+
+        var wallet = new Wallet 
+        {
+            UserId = id,
+            Amount = walletData.Amount
+        };
+
+        await _context.Wallets.AddAsync(wallet);
         await _context.SaveChangesAsync();
-        return Ok(user);
+        return Ok(wallet);
     }
 
     [HttpPut]
     public async Task<ActionResult<User>> PutUser([FromBody] User newUser)
     {
+        var validation = ValidateEntities.ValidateUser(newUser);
+        if(validation.Count > 0)
+            return BadRequest(new BlockchainException(string.Join(',', validation)));
+        
         _context.Users.Update(newUser);
         await _context.SaveChangesAsync();
         return Ok(newUser);
@@ -72,14 +84,12 @@ public class UserController : ControllerBase
     {
         var user = await _context.Users.FindAsync(id);
         if(user is null)
-            throw new BlockchainException();
+            return NotFound();
+        
+        _context.Wallets.RemoveRange(_context.Wallets.Where(w => w.UserId == user.Id));
+        
         _context.Users.Remove(user);
+        await _context.SaveChangesAsync();
         return Ok();
     }
-
-    /*[HttpDelete("wallet/{id}")]
-    public async Task<ActionResult<User>> DeleteWallet(int id)
-    {
-        
-    }*/
 }

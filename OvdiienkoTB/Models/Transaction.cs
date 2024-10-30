@@ -2,34 +2,55 @@
 
 public class Transaction
 {
-    public string Sender { get; set; }
-    public string Recipient { get; set; }
-    public double Amount { get; set; }
+    public int? SenderId { get; set; }
+    public int RecipientId { get; set; }
+    public decimal Amount { get; set; }
+    public string? Signature { get; set; }
 
-    public Transaction(string sender, string recipient, double amount)
+    public Transaction()
     {
-        Sender = sender;
-        Recipient = recipient;
+        
+    }
+
+    public Transaction(int sender, int recipient, decimal amount)
+    {
+        SenderId = sender;
+        RecipientId = recipient;
         Amount = amount;
     }
 
-    public string GetSender_OMO()
+    public int GetSenderId_OMO()
     {
-        return this.Sender;
+        return SenderId.Value;
     }
 
-    public string GetRecipient_OMO()
+    public int GetRecipientId_OMO()
     {
-        return this.Recipient;
+        return this.RecipientId;
     }
 
-    public double GetAmount_OMO()
+    public decimal GetAmount_OMO()
     {
         return this.Amount;
+    }
+    
+    public string GetData()
+    {
+        return $"{SenderId}:{RecipientId}:{Amount}";
+    }
+
+    public void SignTransaction(Wallet senderWallet)
+    {
+        Signature = senderWallet.SignData(GetData());
+    }
+
+    public bool VerifySignature(Wallet senderWallet)
+    {
+        return Wallet.VerifySignature(GetData(), Signature, senderWallet.PublicKey);
     }
 
     public override string ToString()
     {
-        return $"Sender: {GetSender_OMO()}, Recipient: {GetRecipient_OMO()}, Amount: {GetAmount_OMO()}";
+        return $"Sender: {GetSenderId_OMO()}, Recipient: {GetRecipientId_OMO()}, Amount: {GetAmount_OMO()}";
     }
 }

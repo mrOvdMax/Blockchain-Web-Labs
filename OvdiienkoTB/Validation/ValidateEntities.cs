@@ -1,5 +1,7 @@
 ﻿using System.Collections.ObjectModel;
+using System.Runtime.InteropServices.JavaScript;
 using OvdiienkoTB.Models;
+using static System.Text.RegularExpressions.Regex;
 
 namespace OvdiienkoTB.Validation;
 
@@ -14,6 +16,8 @@ public static class ValidateEntities
         
         if (string.IsNullOrEmpty(user.Email))
             errors.Add("Email is required");
+        if(!IsMatch(user.Email, @"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"))
+            errors.Add("Email is not valid");
         if (string.IsNullOrEmpty(user.Name))
             errors.Add("Name is required");
         if (string.IsNullOrEmpty(user.Surname))
@@ -26,6 +30,7 @@ public static class ValidateEntities
         
         return errors;
     }
+    
 
     public static Collection<string> ValidateWallet(Wallet wallet)
     {
@@ -35,9 +40,11 @@ public static class ValidateEntities
         var errors = new Collection<string>();
         
         if(string.IsNullOrEmpty(wallet.PublicKey))
-            throw new BlockchainException("Public key is missing");
+            errors.Add("Public key is missing");
         if (wallet.Amount != 0)
-            throw new BlockchainException("Amount is invalid");
+            errors.Add("Amount is invalid");
+        if(wallet.UserId <= 0)
+            errors.Add("UserId is required");
         
         return errors;
     }
