@@ -8,8 +8,16 @@ using OvdiienkoTB.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+var port = args.FirstOrDefault(arg => arg.StartsWith("--port="))?.Split('=')[1];
+if (port != null)
+{
+    builder.Configuration.AddJsonFile($"Properties/{port}.json", optional: false);
+}
+
+builder.Services.Configure<NodesResponse>(builder.Configuration.GetSection("BlockchainSettings"));
+var nodeUrls = builder.Configuration.GetSection("BlockchainSettings:NodeUrls").Get<List<string>>();
+builder.Services.AddSingleton(nodeUrls);
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -20,7 +28,8 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 
 builder.Services.AddDbContext<BlockchainDbContext>(options =>
-        options.UseSqlServer(builder.Configuration.GetConnectionString("DesktopConnection")).EnableSensitiveDataLogging());
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DesktopConnection")).EnableSensitiveDataLogging());
+
 builder.Services.AddScoped<BlockchainJson>();
 
 var app = builder.Build();
@@ -28,11 +37,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(/*options => 
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
-        options.RoutePrefix = string.Empty;
-    }*/);
+    app.UseSwaggerUI();
 }
 
 app.UseExceptionHandler(errorApp =>
@@ -54,9 +59,13 @@ app.UseExceptionHandler(errorApp =>
 });
 
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
-
-app.MapControllers(); 
+app.MapControllers();
 
 app.Run();
+
+
+/*// Для кожної ноди встановлюємо різний порт
+await app.RunAsync("http://localhost:5001");  // для першої ноди
+await app.RunAsync("http://localhost:5002");  // для другої ноди
+await app.RunAsync("http://localhost:5003");  // для третьої ноди*/

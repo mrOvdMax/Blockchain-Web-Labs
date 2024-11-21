@@ -23,15 +23,12 @@ public class Wallet : BaseEntity
     
     public string SignData(string data)
     {
-        // Convert the Base64 encoded private key back to a byte array
         var privateKeyBytes = Convert.FromBase64String(PrivateKey);
     
         using var rsa = RSA.Create();
     
-        // Import the private key from the byte array
         rsa.ImportRSAPrivateKey(privateKeyBytes, out _);
 
-        // Sign the data using the private key
         var dataToSign = Encoding.UTF8.GetBytes(data);
         var signatureBytes = rsa.SignData(dataToSign, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
     

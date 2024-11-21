@@ -1,5 +1,8 @@
 ﻿using System.Collections;
+using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using OvdiienkoTB.Data;
@@ -15,9 +18,19 @@ public class BlockchainJson : IEnumerable<Block>
     private const int StartingNonce = 1510; 
     private const string Surname = "Ovdiienko";
     private decimal _mineReward = 2005;
+    private const int MinNodes = 2;
+    private const int MaxNodes = 4;
+    private static readonly HashSet<string> _nodes = []; 
     private readonly JsonBlockOperations _jsonBlockOperations = new();
     private readonly JsonTransactionOperations _jsonTransactionOperations; 
     private readonly BlockchainDbContext _context;
+    
+    private readonly JsonSerializerOptions _options = new JsonSerializerOptions()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public BlockchainJson(BlockchainDbContext context)
     {
@@ -29,6 +42,118 @@ public class BlockchainJson : IEnumerable<Block>
         
         LoadCurrentTransactions(); 
     }
+    
+    // Реєстрація нового вузла з перевіркою
+    public void RegisterNode(string nodeAddress)
+    {
+        if (_nodes.Count is < MaxNodes and > MinNodes )
+        {
+            _nodes.Add(nodeAddress);
+        }
+        else
+        {
+            Console.WriteLine("Cannot register more than 4 nodes.");
+        }
+    }
+    
+    // Перевірка консенсусу серед всіх вузлів
+    public bool ResolveConflicts()
+    {
+        int maxLength = _jsonBlockOperations.GetBlockCount();
+        List<Block> newChain = this.GetBlockchain();
+
+        foreach (var node in _nodes)
+        {
+            try
+            {
+                // Виконуємо запит до інших вузлів для отримання їхнього ланцюга
+                var response = GetChainFromNode(node); 
+                if (response.Length > maxLength && ValidChain(response.Chain))
+                {
+                    maxLength = response.Length;
+                    newChain = response.Chain;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error with node {node}: {ex.Message}");
+            }
+        }
+
+        if (newChain != this.GetBlockchain())
+        {
+            // Оновлюємо ланцюг
+            _jsonBlockOperations.SerializeBlocks(newChain);
+            Console.WriteLine("Blockchain updated after consensus resolution.");
+            return true;
+        }
+
+        Console.WriteLine("No consensus resolution required.");
+        return false;
+    }
+
+    // Метод для отримання ланцюга з вузла
+    private ChainResponse GetChainFromNode(string node)
+    {
+        try
+        {
+            // Формуємо URL для запиту
+            var url = $"{node}/chain";
+        
+            // Відправляємо GET запит для отримання ланцюга
+            var request = WebRequest.Create(url);
+            request.Method = "GET";
+        
+            // Отримуємо відповідь
+            using (var response = request.GetResponse())
+            using (var stream = response.GetResponseStream())
+            using (var reader = new StreamReader(stream))
+            {
+                // Читаємо відповідь
+                var jsonResponse = reader.ReadToEnd();
+
+                // Десеріалізуємо JSON в об'єкт ChainResponse
+                var chainResponse = JsonSerializer.Deserialize<ChainResponse>(jsonResponse, _options);
+
+                return chainResponse ?? new ChainResponse(new List<Block>(), 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error while fetching chain from node {node}: {ex.Message}");
+            return new ChainResponse(new List<Block>(), 0); // Повертаємо порожній ланцюг у разі помилки
+        }
+    }
+
+
+    // Метод перевірки ланцюга
+    public bool ValidChain(List<Block> chain)
+    {
+        for (int i = 1; i < chain.Count; i++)
+        {
+            Block lastBlock = chain[i - 1];
+            Block currentBlock = chain[i];
+            if (!currentBlock.PreviousHash.Equals(Hash_OMO(lastBlock)))
+            {
+                Console.WriteLine("Hashes don't match.");
+                return false;
+            }
+            if (!IsProofValid(currentBlock));
+            {
+                Console.WriteLine("Proof is not valid.");
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    private bool IsProofValid(Block block)
+    {
+        var (nonce, finalHash) = ProofOfWork_OMO(block);
+
+        return finalHash.EndsWith("10");
+    }
+
 
     public Transaction NewCurrencyTransaction_OMO(int senderWalletId, int recipientWalletId, decimal amount)
     {
@@ -109,6 +234,31 @@ public class BlockchainJson : IEnumerable<Block>
         Console.WriteLine();
         
         return newBlock;
+    }
+    
+    public static async Task SendTransactionToNodesAsync(Transaction transaction)
+    {
+        foreach (var node in _nodes)
+        {
+            using var client = new HttpClient();
+            await client.PostAsJsonAsync(node + "/transactions/new", transaction);
+        }
+    }
+    
+    // Отримання ланцюга від інших нод
+    public async Task<ChainResponse?> GetChainFromNodeAsync(string nodeUrl)
+    {
+        using var client = new HttpClient();
+        try
+        {
+            var response = await client.GetStringAsync(nodeUrl + "/blockchain");
+            return JsonSerializer.Deserialize<ChainResponse>(response);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error while connecting to node {nodeUrl}: {ex.Message}");
+            return null;
+        }
     }
 
     public Block NewBlock_OMO(int minerId)

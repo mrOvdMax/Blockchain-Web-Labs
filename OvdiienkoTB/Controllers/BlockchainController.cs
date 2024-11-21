@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OvdiienkoTB.Data;
 using OvdiienkoTB.Models;
@@ -12,28 +13,68 @@ public class BlockchainController : ControllerBase
 {
     private readonly BlockchainJson _blockchain;
     private readonly BlockchainDbContext _context;
-    private readonly JsonBlockOperations _jsonBlockOperations = new JsonBlockOperations();
+    private readonly JsonBlockOperations _jsonBlockOperations = new();
+    private static List<string>? _nodes = [];
 
-    public BlockchainController(BlockchainJson blockchain, BlockchainDbContext context)
+    public BlockchainController(BlockchainJson blockchain, BlockchainDbContext context, IConfiguration configuration)
     {
         _blockchain = blockchain;
         _context = context;
+        _nodes = configuration.GetSection("BlockchainSettings:Nodes").Get<List<string>>();
+    }
+    
+    // Add a new node to the network
+    [HttpPost("nodes/register")]
+    public IActionResult RegisterNodes([FromBody] NodesResponse nodesResponse)
+    {
+        if (nodesResponse?.Nodes == null || !nodesResponse.Nodes.Any())
+        {
+            return BadRequest("Invalid nodes data.");
+        }
+
+        foreach (var node in nodesResponse.Nodes)
+        {
+            _nodes.Add(node);
+        }
+
+        return Ok(new { message = "Nodes registered successfully", nodes = _nodes });
+    }
+    
+    // Get the list of registered nodes
+    [HttpGet("nodes")]
+    public IActionResult GetNodes()
+    {
+        return Ok(new { nodes = _nodes });
+    }
+
+    // Resolve conflicts with other nodes' chains
+    [HttpGet("nodes/resolve")]
+    public async Task<IActionResult> ResolveConflicts()
+    {
+        bool isChainUpdated = _blockchain.ResolveConflicts(/*_nodes*/);
+
+        if (isChainUpdated)
+        {
+            return Ok(new ChainResponse(_blockchain.GetBlockchain(), _blockchain.GetBlockchain().Count));
+        }
+
+        return Ok(new ChainResponse(_blockchain.GetBlockchain(), _blockchain.GetBlockchain().Count));
     }
 
     [HttpPost("transactions/new/{senderId}/{recipientId}/{amount}")]
     public async Task<ActionResult<Transaction>> NewTransaction(int senderId, int recipientId, int amount)
     {
-        
         if (amount <= 0)
             return BadRequest("Transaction amount must be greater than zero");
 
         var index = _blockchain.NewCurrencyTransaction_OMO(senderId, recipientId, amount);
+        
+        await BlockchainJson.SendTransactionToNodesAsync(new Transaction(senderId, recipientId, amount)); 
 
         await _context.SaveChangesAsync();
-
         return Ok();
     }
-
+    
     [HttpPost("transactions/check")]
     public async Task<ActionResult<bool>> CheckTransaction([FromBody] Transaction? transaction)
     {
