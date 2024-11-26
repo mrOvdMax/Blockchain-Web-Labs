@@ -13,52 +13,79 @@ public class BlockchainController : ControllerBase
 {
     private readonly BlockchainJson _blockchain;
     private readonly BlockchainDbContext _context;
-    private readonly JsonBlockOperations _jsonBlockOperations = new();
-    private static List<string>? _nodes = [];
+    private readonly JsonBlockOperations _jsonBlockOperations;
+    private readonly JsonBlockOperations _mainJsonBlockOperations;
+    private readonly JsonNodeOperations _jsonNodeOperations = new();
+    private static List<string>? _nodes = new();
+    private readonly IConfiguration _configuration;
 
     public BlockchainController(BlockchainJson blockchain, BlockchainDbContext context, IConfiguration configuration)
     {
         _blockchain = blockchain;
         _context = context;
+        _configuration = configuration;
+
+        var port = configuration["ASPNETCORE_URLS"]?.Split(':').Last();
+        var localFilePath = configuration[$"Paths:JsonNodeLocalBlockchain{port}"];
+        var mainFilePath = configuration["Paths:JsonBlockchainPath"];
+
+        _jsonBlockOperations = new JsonBlockOperations(localFilePath);
+        _mainJsonBlockOperations = new JsonBlockOperations(mainFilePath);
+
         _nodes = configuration.GetSection("BlockchainSettings:Nodes").Get<List<string>>();
     }
-    
-    // Add a new node to the network
+
     [HttpPost("nodes/register")]
-    public IActionResult RegisterNodes([FromBody] NodesResponse nodesResponse)
+    public IActionResult RegisterNodes([FromBody] List<string>? nodeAddresses)
     {
-        if (nodesResponse?.Nodes == null || !nodesResponse.Nodes.Any())
+        if (nodeAddresses is null || nodeAddresses.Count == 0)
         {
-            return BadRequest("Invalid nodes data.");
+            return BadRequest("Invalid node data.");
         }
 
-        foreach (var node in nodesResponse.Nodes)
+        foreach (var address in nodeAddresses)
         {
-            _nodes.Add(node);
+            _jsonNodeOperations.AddNode(new Node { Address = address });
         }
 
-        return Ok(new { message = "Nodes registered successfully", nodes = _nodes });
+        return Ok(new { message = "Nodes registered successfully", nodes = _jsonNodeOperations.DeserializeNodes() });
     }
-    
-    // Get the list of registered nodes
+
     [HttpGet("nodes")]
     public IActionResult GetNodes()
     {
-        return Ok(new { nodes = _nodes });
+        var nodes = _jsonNodeOperations.DeserializeNodes();
+        return Ok(new { nodes });
     }
 
-    // Resolve conflicts with other nodes' chains
-    [HttpGet("nodes/resolve")]
-    public async Task<IActionResult> ResolveConflicts()
+    [HttpDelete("nodes/{address}")]
+    public IActionResult RemoveNode(string address)
     {
-        bool isChainUpdated = _blockchain.ResolveConflicts(/*_nodes*/);
-
-        if (isChainUpdated)
+        try
         {
-            return Ok(new ChainResponse(_blockchain.GetBlockchain(), _blockchain.GetBlockchain().Count));
+            _jsonNodeOperations.RemoveNode(address);
+            return Ok(new { message = $"Node {address} removed successfully." });
         }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            return StatusCode(500, new { message = "An error occurred while removing the node." });
+        }
+    }
 
-        return Ok(new ChainResponse(_blockchain.GetBlockchain(), _blockchain.GetBlockchain().Count));
+    [HttpDelete("nodes")]
+    public IActionResult RemoveAllNodes()
+    {
+        try
+        {
+            _jsonNodeOperations.RemoveAllNodes();
+            return Ok(new { message = "All nodes removed successfully." });
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            return StatusCode(500, new { message = "An error occurred while removing all nodes." });
+        }
     }
 
     [HttpPost("transactions/new/{senderId}/{recipientId}/{amount}")]
@@ -68,13 +95,13 @@ public class BlockchainController : ControllerBase
             return BadRequest("Transaction amount must be greater than zero");
 
         var index = _blockchain.NewCurrencyTransaction_OMO(senderId, recipientId, amount);
-        
-        await BlockchainJson.SendTransactionToNodesAsync(new Transaction(senderId, recipientId, amount)); 
+
+        await BlockchainJson.SendTransactionToNodesAsync(new Transaction(senderId, recipientId, amount));
 
         await _context.SaveChangesAsync();
         return Ok();
     }
-    
+
     [HttpPost("transactions/check")]
     public async Task<ActionResult<bool>> CheckTransaction([FromBody] Transaction? transaction)
     {
@@ -104,7 +131,7 @@ public class BlockchainController : ControllerBase
     {
         var newBlock = _blockchain.NewBlock_OMO(id);
 
-        if (newBlock == null)
+        if (newBlock is null)
         {
             return BadRequest("Mining failed. No new block was created.");
         }
@@ -121,8 +148,8 @@ public class BlockchainController : ControllerBase
                 timestamp = newBlock.Timestamp,
                 transactions = newBlock.GetTransactions_OMO().Select(tx => new
                 {
-                    sender = tx.SenderId, 
-                    recipient = tx.RecipientId, 
+                    sender = tx.SenderId,
+                    recipient = tx.RecipientId,
                     amount = tx.Amount
                 }).ToList(),
                 previousHash = newBlock.GetPreviousHash_OMO(),
@@ -222,4 +249,61 @@ public class BlockchainController : ControllerBase
             return StatusCode(500, new { message = "An error occurred while deleting the last block." });
         }
     }
+
+    [HttpPost("resolve")]
+    public IActionResult ResolveConflicts()
+    {
+        var resolved = ResolveConflictsMethod();
+        if (resolved)
+        {
+            return Ok("Blockchain updated after consensus resolution.");
+        }
+
+        return Ok("No consensus resolution required.");
+    }
+
+    private bool ResolveConflictsMethod()
+    {
+        if (_nodes == null || !_nodes.Any())
+        {
+            throw new InvalidOperationException("No nodes are registered for consensus resolution.");
+        }
+
+        var maxLength = _mainJsonBlockOperations.GetBlockCount();
+        var newChain = _mainJsonBlockOperations.DeserializeBlocks() ?? [];
+
+        foreach (var node in _nodes)
+        {
+            try
+            {
+                var nodeFilePath = _configuration[$"Paths:JsonNodeLocalBlockchain{node.Split(':').Last()}"];
+                var nodeOperations = new JsonBlockOperations(nodeFilePath);
+                var nodeChain = nodeOperations.DeserializeBlocks();
+
+                if (nodeChain is not null && nodeChain.Count > maxLength && ValidChain(nodeChain))
+                {
+                    maxLength = nodeChain.Count;
+                    newChain = nodeChain;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error with node {node}: {ex.Message}");
+            }
+        }
+
+        if (newChain != _mainJsonBlockOperations.DeserializeBlocks())
+        {
+            _mainJsonBlockOperations.SerializeBlocks(newChain);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool ValidChain(List<Block> chain)
+    {
+        return chain.Skip(1).All(block => block.PreviousHash.EndsWith("10"));
+    }
 }
+

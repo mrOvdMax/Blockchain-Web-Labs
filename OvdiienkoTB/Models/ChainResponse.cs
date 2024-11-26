@@ -2,8 +2,8 @@
 
 public class ChainResponse
 {
-    public List<Block> Chain { get; set; }  // Список блоків в ланцюгу
-    public int Length { get; set; }          // Довжина ланцюга
+    public List<Block> Chain { get; set; }
+    public int Length { get; set; }
 
     public ChainResponse(List<Block> chain, int length)
     {

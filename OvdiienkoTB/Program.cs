@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using OvdiienkoTB.Data;
 using OvdiienkoTB.Models;
+using OvdiienkoTB.Operations;
 using OvdiienkoTB.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,7 +16,7 @@ if (port != null)
 }
 
 builder.Services.Configure<NodesResponse>(builder.Configuration.GetSection("BlockchainSettings"));
-var nodeUrls = builder.Configuration.GetSection("BlockchainSettings:NodeUrls").Get<List<string>>();
+var nodeUrls = builder.Configuration.GetSection("BlockchainSettings:Nodes").Get<List<string>>();
 builder.Services.AddSingleton(nodeUrls);
 
 builder.Services.AddControllers();
@@ -31,6 +32,12 @@ builder.Services.AddDbContext<BlockchainDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DesktopConnection")).EnableSensitiveDataLogging());
 
 builder.Services.AddScoped<BlockchainJson>();
+
+var nodeFilePath = builder.Configuration.GetSection("BlockchainSettings:NodeFilePath").Value;
+builder.Services.AddSingleton(new JsonBlockOperations(nodeFilePath));
+
+var mainFilePath = builder.Configuration.GetSection("BlockchainSettings:MainFilePath").Value;
+builder.Services.AddSingleton(new JsonBlockOperations(mainFilePath));
 
 var app = builder.Build();
 
@@ -63,9 +70,3 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-
-
-/*// Для кожної ноди встановлюємо різний порт
-await app.RunAsync("http://localhost:5001");  // для першої ноди
-await app.RunAsync("http://localhost:5002");  // для другої ноди
-await app.RunAsync("http://localhost:5003");  // для третьої ноди*/

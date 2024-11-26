@@ -3,5 +3,4 @@
 public class Node
 {
     public string Address { get; set; }
-    
 }

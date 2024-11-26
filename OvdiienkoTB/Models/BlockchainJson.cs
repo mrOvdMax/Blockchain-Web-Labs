@@ -20,7 +20,7 @@ public class BlockchainJson : IEnumerable<Block>
     private decimal _mineReward = 2005;
     private const int MinNodes = 2;
     private const int MaxNodes = 4;
-    private static readonly HashSet<string> _nodes = []; 
+    private static readonly HashSet<string> Nodes = []; 
     private readonly JsonBlockOperations _jsonBlockOperations = new();
     private readonly JsonTransactionOperations _jsonTransactionOperations; 
     private readonly BlockchainDbContext _context;
@@ -44,17 +44,38 @@ public class BlockchainJson : IEnumerable<Block>
     }
     
     // Реєстрація нового вузла з перевіркою
+    /*public void RegisterNode(string nodeAddress)
+    {
+        if (Nodes.Count is < MaxNodes and > MinNodes )
+        {
+            Nodes.Add(nodeAddress);
+        }
+        else
+        {
+            Console.WriteLine("Cannot register more than 4 nodes.");
+        }
+    }*/
     public void RegisterNode(string nodeAddress)
     {
-        if (_nodes.Count is < MaxNodes and > MinNodes )
+        if (Nodes.Count < MaxNodes && Nodes.Count > MinNodes)
         {
-            _nodes.Add(nodeAddress);
+            var newNode = new Node { Address = nodeAddress };
+        
+            // Add the node to the in-memory list
+            Nodes.Add(nodeAddress);
+
+            // Persist the node using JsonNodeOperations
+            var jsonNodeOperations = new JsonNodeOperations();
+            jsonNodeOperations.AddNode(newNode);
+
+            Console.WriteLine($"Node {nodeAddress} has been registered and persisted.");
         }
         else
         {
             Console.WriteLine("Cannot register more than 4 nodes.");
         }
     }
+
     
     // Перевірка консенсусу серед всіх вузлів
     public bool ResolveConflicts()
@@ -62,7 +83,7 @@ public class BlockchainJson : IEnumerable<Block>
         int maxLength = _jsonBlockOperations.GetBlockCount();
         List<Block> newChain = this.GetBlockchain();
 
-        foreach (var node in _nodes)
+        foreach (var node in Nodes)
         {
             try
             {
@@ -238,7 +259,7 @@ public class BlockchainJson : IEnumerable<Block>
     
     public static async Task SendTransactionToNodesAsync(Transaction transaction)
     {
-        foreach (var node in _nodes)
+        foreach (var node in Nodes)
         {
             using var client = new HttpClient();
             await client.PostAsJsonAsync(node + "/transactions/new", transaction);
