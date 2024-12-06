@@ -1,4 +1,6 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Text;
+using System.Text.Json.Serialization;
+using OvdiienkoTB.Operations;
 
 namespace OvdiienkoTB.Models;
 
@@ -41,6 +43,20 @@ public class Block
     public List<Transaction> GetTransactions_OMO() => this.Transactions;
     public int GetNonce_OMO() => this.Nonce;
     public string GetPreviousHash_OMO() => this.PreviousHash;
+
+    public string GetHash_OMO()
+    {
+        var hashingInputBuilder = new StringBuilder();
+
+        hashingInputBuilder.Append(Index)
+            .Append(Timestamp)
+            .Append(Nonce)
+            .Append(PreviousHash);
+
+        var hashingInput = hashingInputBuilder.ToString();
+
+        return HashOperations.GetSha256Hash_OMO(hashingInput);
+    }
 
     public void AddCoinbaseTransaction_OMO(Transaction transaction)
     {

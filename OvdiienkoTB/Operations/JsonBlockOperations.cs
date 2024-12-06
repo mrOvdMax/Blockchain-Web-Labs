@@ -76,7 +76,7 @@ public class JsonBlockOperations
         catch (Exception ex)
         {
             Console.WriteLine($"Error deserializing blocks: {ex.Message}");
-            return new List<Block>(); // Return an empty list in case of error
+            return []; 
         }
     }
 
@@ -104,12 +104,17 @@ public class JsonBlockOperations
         return DeserializeBlocks().Count;
     }
 
+    public string GetFilePath()
+    {
+        return _filePath;
+    }
+
     public decimal GetLastReward()
     {
         var lastBlock = DeserializeBlocks().LastOrDefault();
-        if(lastBlock is null)
+        if (lastBlock is null)
             throw new NullReferenceException();
-        if(lastBlock.Transactions.Count <= 0)
+        if (lastBlock.Transactions.Count <= 0)
             return 0;
         return lastBlock?.Transactions.First().Amount ?? 0;
     }

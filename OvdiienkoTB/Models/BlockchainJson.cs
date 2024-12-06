@@ -13,18 +13,19 @@ namespace OvdiienkoTB.Models;
 
 public class BlockchainJson : IEnumerable<Block>
 {
-    private readonly List<Transaction> _currentTransactions = [];
-    private const int MaxNonce = 102024; 
-    private const int StartingNonce = 1510; 
+    private readonly List<Transaction> _currentTransactions = new();
+    private const int MaxNonce = 102024;
+    private const int StartingNonce = 1510;
     private const string Surname = "Ovdiienko";
     private decimal _mineReward = 2005;
     private const int MinNodes = 2;
     private const int MaxNodes = 4;
-    private static readonly HashSet<string> Nodes = []; 
-    private readonly JsonBlockOperations _jsonBlockOperations = new();
-    private readonly JsonTransactionOperations _jsonTransactionOperations; 
+    private static readonly HashSet<string> Nodes = [];
+    private readonly JsonBlockOperations _jsonBlockOperations;
+    private readonly JsonTransactionOperations _jsonTransactionOperations;
     private readonly BlockchainDbContext _context;
-    
+    private readonly IConfiguration _configuration;
+
     private readonly JsonSerializerOptions _options = new JsonSerializerOptions()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -32,39 +33,31 @@ public class BlockchainJson : IEnumerable<Block>
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public BlockchainJson(BlockchainDbContext context)
+    public BlockchainJson(BlockchainDbContext context, IConfiguration configuration)
     {
         _context = context;
-        _jsonTransactionOperations = new JsonTransactionOperations(); 
+        _configuration = configuration;
+        _jsonTransactionOperations = new JsonTransactionOperations();
+
+        var port = configuration["ASPNETCORE_URLS"]?.Split(':').Last();
+        var localFilePath = configuration[$"Paths:JsonNodeLocalBlockchain{port}"];
+
+        _jsonBlockOperations = new JsonBlockOperations(localFilePath);
 
         if (_jsonBlockOperations.GetBlockCount() == 0)
             NewGenesisBlock_OMO(Surname, 0);
-        
-        LoadCurrentTransactions(); 
+
+        LoadCurrentTransactions();
     }
-    
-    // Реєстрація нового вузла з перевіркою
-    /*public void RegisterNode(string nodeAddress)
-    {
-        if (Nodes.Count is < MaxNodes and > MinNodes )
-        {
-            Nodes.Add(nodeAddress);
-        }
-        else
-        {
-            Console.WriteLine("Cannot register more than 4 nodes.");
-        }
-    }*/
+
     public void RegisterNode(string nodeAddress)
     {
         if (Nodes.Count < MaxNodes && Nodes.Count > MinNodes)
         {
             var newNode = new Node { Address = nodeAddress };
-        
-            // Add the node to the in-memory list
+
             Nodes.Add(nodeAddress);
 
-            // Persist the node using JsonNodeOperations
             var jsonNodeOperations = new JsonNodeOperations();
             jsonNodeOperations.AddNode(newNode);
 
@@ -76,8 +69,6 @@ public class BlockchainJson : IEnumerable<Block>
         }
     }
 
-    
-    // Перевірка консенсусу серед всіх вузлів
     public bool ResolveConflicts()
     {
         int maxLength = _jsonBlockOperations.GetBlockCount();
@@ -87,8 +78,7 @@ public class BlockchainJson : IEnumerable<Block>
         {
             try
             {
-                // Виконуємо запит до інших вузлів для отримання їхнього ланцюга
-                var response = GetChainFromNode(node); 
+                var response = GetChainFromNode(node);
                 if (response.Length > maxLength && ValidChain(response.Chain))
                 {
                     maxLength = response.Length;
@@ -103,7 +93,6 @@ public class BlockchainJson : IEnumerable<Block>
 
         if (newChain != this.GetBlockchain())
         {
-            // Оновлюємо ланцюг
             _jsonBlockOperations.SerializeBlocks(newChain);
             Console.WriteLine("Blockchain updated after consensus resolution.");
             return true;
@@ -112,42 +101,61 @@ public class BlockchainJson : IEnumerable<Block>
         Console.WriteLine("No consensus resolution required.");
         return false;
     }
+    
+    public static async Task SendTransactionToNodesAsync(Transaction transaction)
+    {
+        foreach (var node in Nodes)
+        {
+            try
+            {
+                using var client = new HttpClient();
+                var response = await client.PostAsJsonAsync(node + "/api/blockchain/transactions/new", transaction);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"Failed to send transaction to node {node}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error sending transaction to node {node}: {ex.Message}");
+            }
+        }
+    }
 
-    // Метод для отримання ланцюга з вузла
+    public void AddTransactionToMempool(Transaction transaction)
+    {
+        _currentTransactions.Add(transaction);
+        SaveCurrentTransactions();
+        Console.WriteLine($"Transaction {transaction.SenderId} to {transaction.RecipientId} added back to mempool.");
+    }
+
     private ChainResponse GetChainFromNode(string node)
     {
         try
         {
-            // Формуємо URL для запиту
             var url = $"{node}/chain";
-        
-            // Відправляємо GET запит для отримання ланцюга
+
             var request = WebRequest.Create(url);
             request.Method = "GET";
-        
-            // Отримуємо відповідь
+
             using (var response = request.GetResponse())
             using (var stream = response.GetResponseStream())
             using (var reader = new StreamReader(stream))
             {
-                // Читаємо відповідь
                 var jsonResponse = reader.ReadToEnd();
 
-                // Десеріалізуємо JSON в об'єкт ChainResponse
                 var chainResponse = JsonSerializer.Deserialize<ChainResponse>(jsonResponse, _options);
 
-                return chainResponse ?? new ChainResponse(new List<Block>(), 0);
+                return chainResponse ?? new ChainResponse([], 0);
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error while fetching chain from node {node}: {ex.Message}");
-            return new ChainResponse(new List<Block>(), 0); // Повертаємо порожній ланцюг у разі помилки
+            return new ChainResponse([], 0);
         }
     }
 
-
-    // Метод перевірки ланцюга
     public bool ValidChain(List<Block> chain)
     {
         for (int i = 1; i < chain.Count; i++)
@@ -159,15 +167,17 @@ public class BlockchainJson : IEnumerable<Block>
                 Console.WriteLine("Hashes don't match.");
                 return false;
             }
-            if (!IsProofValid(currentBlock));
+
+            if (!IsProofValid(currentBlock))
             {
                 Console.WriteLine("Proof is not valid.");
                 return false;
             }
         }
+
         return true;
     }
-    
+
     private bool IsProofValid(Block block)
     {
         var (nonce, finalHash) = ProofOfWork_OMO(block);
@@ -175,15 +185,13 @@ public class BlockchainJson : IEnumerable<Block>
         return finalHash.EndsWith("10");
     }
 
-
     public Transaction NewCurrencyTransaction_OMO(int senderWalletId, int recipientWalletId, decimal amount)
     {
         Transaction transaction;
-        
+
         if (senderWalletId == 0)
         {
             transaction = new Transaction(senderWalletId, recipientWalletId, amount);
-            
         }
         else
         {
@@ -192,24 +200,23 @@ public class BlockchainJson : IEnumerable<Block>
 
             if (senderWallet is null || recipientWallet is null)
                 throw new BlockchainException("Sender or recipient wallet not found.");
-        
+
             if (senderWalletId == recipientWalletId)
                 throw new BlockchainException("Recipient wallet id cannot be the same.");
 
             if (senderWallet.Amount < amount)
                 throw new BlockchainException("Insufficient funds.");
 
-        
-        
+
             transaction = new Transaction(senderWalletId, recipientWalletId, amount);
         }
-        
-       
+
+
         //transaction.SignTransaction(senderWallet);
         _currentTransactions.Add(transaction);
-        SaveCurrentTransactions(); 
-        
-        _context.SaveChanges(); 
+        SaveCurrentTransactions();
+
+        _context.SaveChanges();
 
         return transaction;
     }
@@ -217,69 +224,45 @@ public class BlockchainJson : IEnumerable<Block>
     public Block NewGenesisBlock_OMO(string previousHash, int minerId)
     {
         var transactions = _currentTransactions.ToList();
-        
+
         var newBlock = new Block(this._jsonBlockOperations.GetBlockCount(), transactions, previousHash);
-        
+
         var totalFees = _currentTransactions.Sum(t => t.Amount * 0.02m);
-        
+
         AddCoinbaseTransaction_OMO(newBlock, minerId, CalculateCoinbaseTransactionReward_OMO() + totalFees);
 
-        
+
         var (finalNonce, finalHash) = ProofOfWork_OMO(newBlock);
-        
+
         foreach (var transaction in _currentTransactions)
         {
             var recipientWallet = _context.Wallets.FirstOrDefault(w => w.Id == transaction.RecipientId);
 
             if (transaction.SenderId == 0 && recipientWallet is not null)
             {
-                recipientWallet.AdjustBalance(transaction.Amount); 
+                recipientWallet.AdjustBalance(transaction.Amount);
                 continue;
             }
-            
+
             var senderWallet = _context.Wallets.FirstOrDefault(w => w.Id == transaction.SenderId);
 
             if (senderWallet is null || recipientWallet is null) continue;
             senderWallet.AdjustBalance(-transaction.Amount);
             recipientWallet.AdjustBalance(transaction.Amount * 0.98m);
         }
-        
+
         _context.SaveChanges();
-    
+
         _currentTransactions.Clear();
-        SaveCurrentTransactions(); 
-        
+        SaveCurrentTransactions();
+
         _jsonBlockOperations.SerializeBlock(newBlock);
 
-        Console.WriteLine($"New block with index {newBlock.Index} added with Nonce: {finalNonce} and Hash: {finalHash}");
+        Console.WriteLine(
+            $"New block with index {newBlock.Index} added with Nonce: {finalNonce} and Hash: {finalHash}");
         Console.WriteLine();
-        
+
         return newBlock;
-    }
-    
-    public static async Task SendTransactionToNodesAsync(Transaction transaction)
-    {
-        foreach (var node in Nodes)
-        {
-            using var client = new HttpClient();
-            await client.PostAsJsonAsync(node + "/transactions/new", transaction);
-        }
-    }
-    
-    // Отримання ланцюга від інших нод
-    public async Task<ChainResponse?> GetChainFromNodeAsync(string nodeUrl)
-    {
-        using var client = new HttpClient();
-        try
-        {
-            var response = await client.GetStringAsync(nodeUrl + "/blockchain");
-            return JsonSerializer.Deserialize<ChainResponse>(response);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error while connecting to node {nodeUrl}: {ex.Message}");
-            return null;
-        }
     }
 
     public Block NewBlock_OMO(int minerId)
@@ -288,44 +271,45 @@ public class BlockchainJson : IEnumerable<Block>
         {
             return NewGenesisBlock_OMO(Surname, minerId);
         }
-    
+
         var transactions = _currentTransactions.ToList();
-    
+
         var newBlock = new Block(this._jsonBlockOperations.GetBlockCount(), transactions, GetLastHash_OMO());
-    
+
         var totalFees = _currentTransactions.Sum(t => t.Amount * 0.02m);
-    
+
         AddCoinbaseTransaction_OMO(newBlock, minerId, CalculateCoinbaseTransactionReward_OMO() + totalFees);
-    
+
         var (finalNonce, finalHash) = ProofOfWork_OMO(newBlock);
-    
+
         foreach (var transaction in _currentTransactions)
         {
             var recipientWallet = _context.Wallets.FirstOrDefault(w => w.Id == transaction.RecipientId);
 
             if (transaction.SenderId == 0 && recipientWallet is not null)
             {
-                recipientWallet.AdjustBalance(transaction.Amount); 
+                recipientWallet.AdjustBalance(transaction.Amount);
                 continue;
             }
-            
+
             var senderWallet = _context.Wallets.FirstOrDefault(w => w.Id == transaction.SenderId);
 
             if (senderWallet is null || recipientWallet is null) continue;
             senderWallet.AdjustBalance(-transaction.Amount);
             recipientWallet.AdjustBalance(transaction.Amount * 0.98m);
         }
-    
+
         _context.SaveChanges();
-    
+
         _currentTransactions.Clear();
-        SaveCurrentTransactions(); 
+        SaveCurrentTransactions();
 
         _jsonBlockOperations.SerializeBlock(newBlock);
-    
-        Console.WriteLine($"New block with index {newBlock.Index} added with Nonce: {finalNonce} and Hash: {finalHash}");
+
+        Console.WriteLine(
+            $"New block with index {newBlock.Index} added with Nonce: {finalNonce} and Hash: {finalHash}");
         Console.WriteLine();
-    
+
         return newBlock;
     }
 
@@ -334,9 +318,12 @@ public class BlockchainJson : IEnumerable<Block>
         if (_jsonBlockOperations.GetBlockCount() != 0)
         {
             _mineReward = _jsonBlockOperations.GetLastReward();
-            return _mineReward = (_jsonBlockOperations.GetBlockCount() % 2 == 0 && _jsonBlockOperations.GetBlockCount() > 0 ? _mineReward / 11 : _mineReward);
+            return _mineReward =
+                (_jsonBlockOperations.GetBlockCount() % 2 == 0 && _jsonBlockOperations.GetBlockCount() > 0
+                    ? _mineReward / 11
+                    : _mineReward);
         }
-    
+
         return _mineReward;
     }
 
@@ -344,12 +331,12 @@ public class BlockchainJson : IEnumerable<Block>
     {
         block.AddCoinbaseTransaction_OMO(NewCurrencyTransaction_OMO(0, recipient, amount));
     }
-    
+
     public string GetLastHash_OMO()
     {
         return Hash_OMO(_jsonBlockOperations.DeserializeLastBlock());
     }
-    
+
     public Block GetLastBlock_OMO()
     {
         return _jsonBlockOperations.DeserializeLastBlock();
@@ -368,31 +355,31 @@ public class BlockchainJson : IEnumerable<Block>
     private static string Hash_OMO(Block block)
     {
         var hashingInputBuilder = new StringBuilder();
-        
+
         hashingInputBuilder.Append(block.Index)
             .Append(block.Timestamp)
             .Append(block.Nonce)
             .Append(block.PreviousHash);
-        
+
         var hashingInput = hashingInputBuilder.ToString();
 
         return HashOperations.GetSha256Hash_OMO(hashingInput);
     }
-    
+
     private static string Hash_OMO(int index, long timestamp, int nonce, string previousHash)
     {
         var hashingInputBuilder = new StringBuilder();
-        
+
         hashingInputBuilder.Append(index)
             .Append(timestamp)
             .Append(nonce)
             .Append(previousHash);
-        
+
         var hashingInput = hashingInputBuilder.ToString();
 
         return HashOperations.GetSha256Hash_OMO(hashingInput);
     }
- 
+
     public (int, string) ProofOfWork_OMO(Block block)
     {
         var isEvenSurname = Surname.Length % 2 == 0;
@@ -404,20 +391,19 @@ public class BlockchainJson : IEnumerable<Block>
         do
         {
             nonce = isEvenSurname ? nonce + 1 : new Random().Next(StartingNonce, MaxNonce);
-            finalHash = Hash_OMO(block.GetIndex_OMO(), block.GetTimestamp_OMO(), nonce, block.GetPreviousHash_OMO());  
+            finalHash = Hash_OMO(block.GetIndex_OMO(), block.GetTimestamp_OMO(), nonce, block.GetPreviousHash_OMO());
             counter++;
 
             if (nonce > MaxNonce)
             {
                 throw new ArgumentException("Reached the maximum nonce value");
             }
-        }
-        while (!finalHash.EndsWith("10")); 
+        } while (!finalHash.EndsWith("10"));
 
-        block.SetNonce_OMO(nonce);  
-        
+        block.SetNonce_OMO(nonce);
+
         Console.WriteLine($"{_jsonBlockOperations.GetBlockCount()} PoW iteration count: {counter}");
-        return (nonce, finalHash); 
+        return (nonce, finalHash);
     }
 
     public IEnumerator<Block> GetEnumerator() => _jsonBlockOperations.DeserializeBlocks().GetEnumerator();

@@ -2,7 +2,7 @@
 
 public class Transaction
 {
-    public int? SenderId { get; set; }
+    public int SenderId { get; set; }
     public int RecipientId { get; set; }
     public decimal Amount { get; set; }
     public string? Signature { get; set; }
@@ -21,7 +21,7 @@ public class Transaction
 
     public int GetSenderId_OMO()
     {
-        return SenderId.Value;
+        return SenderId;
     }
 
     public int GetRecipientId_OMO()
